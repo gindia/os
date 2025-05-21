@@ -1,0 +1,201 @@
+# vim : set noexpandtab shiftwidth=8 softtabstop=8 tabstop=8 :
+ifeq ($(OS),Windows_NT)
+	MKDIR = @if not exist "$(1)" mkdir "$(1)"
+	NULLDEV = NUL
+	TOOLCHAIN=toolchains/llvm/prebuilt/windows-x86_64
+	CLANG=clang.exe
+else
+	MKDIR = @mkdir -p $(1)
+	NULLDEV = /dev/null
+	TOOLCHAIN=toolchains/llvm/prebuilt/linux-x86_64
+	CLANG=clang
+endif
+
+# *********************************************************************
+
+NAME           ?= native_example
+API            ?= 31
+ANDROID_APP_ID ?=com.demo.native_example
+
+# *********************************************************************
+
+SDK?=$(ANDROID_SDK_ROOT)
+NDK?=$(ANDROID_NDK_HOME)
+
+CC=$(NDK)/$(TOOLCHAIN)/bin/$(CLANG)
+
+PKG_DIR = $(realpath ./game)
+
+ANDROID_TARGET=$(SDK)/platforms/android-$(API)/android.jar
+ANDROID_INCLUDE=$(NDK)/$(TOOLCHAIN)/sysroot/usr/include
+
+ANDROID_CFLAGS =-DOS_ANDROID  -D__ANDROID__ -DANDROID_APP_ID=$(ANDROID_APP_ID) -I$(ANDROID_INCLUDE)
+ANDROID_CLIBS  =-landroid -llog -lc -ldl -lEGL -lGLESv3
+
+# *********************************************************************
+
+.PHONY:\
+	create_out_dir \
+	out/apk/lib/x86_64/os_layer.o \
+	out/apk/lib/arm64-v8a/os_layer.o \
+	game_arm64 \
+	game_x86_64 \
+	pack_apk \
+	AndroidManifest.xml
+
+all: build
+build: create_out_dir msic/debug.keystore build_arm64 build_x86_64 pack_apk
+build_arm64:  out/apk/lib/arm64-v8a/os_layer.o game_arm64
+build_x86_64: out/apk/lib/x86_64/os_layer.o	   game_x86_64
+
+# *********************************************************************
+# dirs
+# ***
+
+create_out_dir:
+	@-rm out/* -fr 2> $(NULLDEV)
+	@-$(call MKDIR,out)
+	@-$(call MKDIR,out/apk/lib/x86_64)
+	@-$(call MKDIR,out/apk/lib/arm64-v8a)
+
+# *********************************************************************
+# key to sign
+# ***
+msic/debug.keystore:
+	@echo --------------------------------
+	@echo new $@ is made
+	@cd msic && keytool -keyalg RSA -genkeypair -alias debug -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+
+# *********************************************************************
+# os layer
+# ***
+out/apk/lib/x86_64/os_layer.o:
+	@echo --------------------------------
+	@zig cc -c --std c17 -g -O0 -fPIC -o $@ $(realpath ./os/os.c) \
+		$(ANDROID_CFLAGS)  \
+		--target=x86_64-linux  \
+		-I $(ANDROID_INCLUDE)/x86_64-linux-android
+
+out/apk/lib/arm64-v8a/os_layer.o:
+	@echo --------------------------------
+	@zig cc -c --std c17 -g -O0 -fPIC -o $@ $(realpath ./os/os.c) \
+		$(ANDROID_CFLAGS)  \
+		--target=aarch64-linux  \
+		-I $(ANDROID_INCLUDE)/aarch64-linux-android
+
+# *********************************************************************
+# game layer
+# ***
+game_arm64:
+	@echo --------------------------------
+	@cd $(realpath ./out/apk/lib/arm64-v8a) && odin build $(PKG_DIR) \
+		--debug -o:minimal -target:linux_arm64 \
+		-build-mode:obj -reloc-mode:pic -no-entry-point -vet-cast -vet-semicolon -vet-shadowing \
+		-vet-style -define:OS_ANDROID=true -define:ANDROID_APP_ID=$(ANDROID_APP_ID)
+
+game_x86_64:
+	@echo --------------------------------
+	@cd $(realpath ./out/apk/lib/x86_64) && odin build $(PKG_DIR) \
+		--debug -o:minimal -target:linux_amd64 \
+		-build-mode:obj -reloc-mode:pic -no-entry-point -vet-cast -vet-semicolon -vet-shadowing \
+		-vet-style -define:OS_ANDROID=true -define:ANDROID_APP_ID=$(ANDROID_APP_ID)
+
+
+# *********************************************************************
+# pack the apk
+# ***
+pack_apk: AndroidManifest.xml
+	@echo --------------------------------
+	@-rm -f out/unaligned_unsigned.apk 2> $(NULLDEV)
+	@-rm -f out/unsigned.apk 2> $(NULLDEV)
+	@-rm -f out/signed.apk 2> $(NULLDEV)
+
+	@echo --------------------------------
+	@$(CC) --target=aarch64-linux-android$(API) --shared -g -O0 -o ./out/apk/lib/arm64-v8a/lib$(NAME).so \
+		$(ANDROID_CLIBS) \
+		$(realpath $(shell ls out/apk/lib/arm64-v8a/*.o))
+	@-rm -f out/apk/lib/arm64-v8a/*.o 2> $(NULLDEV)
+
+	@echo --------------------------------
+	@$(CC) --target=x86_64-linux-android$(API) --shared -g -O0 -o ./out/apk/lib/x86_64/lib$(NAME).so \
+		$(ANDROID_CLIBS) \
+		$(realpath $(shell ls out/apk/lib/x86_64/*.o))
+	@-rm -f out/apk/lib/x86_64/*.o 2> $(NULLDEV)
+
+	@echo --------------------------------
+	@cd out && aapt2 link -o ./apk --output-to-dir --auto-add-overlay -I $(ANDROID_TARGET) --manifest $(realpath ./out/AndroidManifest.xml)
+
+	@echo --------------------------------
+	@cp -f out/apk/resources.arsc out/ 2> $(NULLDEV)
+	@rm out/apk/resources.arsc 2> $(NULLDEV)
+
+	@echo --------------------------------
+	@cd out/apk && 7z a -tzip ../unaligned_unsigned.apk * > $(NULLDEV)
+	@cd out && 7z a -tzip -mx=0 unaligned_unsigned.apk ./resources.arsc > $(NULLDEV)
+
+	@echo --------------------------------
+	@cd out && zipalign -p -f -v 4 unaligned_unsigned.apk unsigned.apk
+
+	@echo --------------------------------
+	@cd out && apksigner sign --out signed.apk --in unsigned.apk --ks $(realpath ./msic/debug.keystore) --ks-key-alias debug --ks-pass pass:android
+	@cd out && apksigner verify signed.apk
+
+	@echo ===========================================
+	@echo apk is ready at out/signed.apk
+	@echo ===========================================
+
+# *********************************************************************
+# AndroidManifest.xml
+# ***
+AndroidManifest.xml:
+ifeq ($(OS),Windows_NT)
+	@echo ^<?xml version="1.0" encoding="utf-8"^?^> > AndroidManifest.xml
+	@echo ^<manifest xmlns:android="http://schemas.android.com/apk/res/android" >> AndroidManifest.xml
+	@echo            package="$(ANDROID_APP_ID)" >> AndroidManifest.xml
+	@echo            android:versionCode="1" >> AndroidManifest.xml
+	@echo            android:versionName="1.0"^> >> AndroidManifest.xml
+	@echo     ^<!-- to ensure support for OpenGL ES 3.1 use API to 21+ --^> >> AndroidManifest.xml
+	@echo     ^<uses-sdk android:minSdkVersion="$(API)"/^> >> AndroidManifest.xml
+	@echo     ^<uses-feature android:glEsVersion="0x00030000" android:required="true" /^> >> AndroidManifest.xml
+	@echo     ^<application android:label="native_example" >> AndroidManifest.xml
+	@echo                   android:hasCode="false" >> AndroidManifest.xml
+	@echo                   android:debuggable="true"^> >> AndroidManifest.xml
+	@echo         ^<activity android:name="android.app.NativeActivity" >> AndroidManifest.xml
+	@echo                    android:exported="true"^> >> AndroidManifest.xml
+	@echo             ^<!-- Tell NativeActivity the name of or .so --^> >> AndroidManifest.xml
+	@echo             ^<meta-data android:name="android.app.lib_name" >> AndroidManifest.xml
+	@echo                        android:value="native_example" /^> >> AndroidManifest.xml
+	@echo             ^<intent-filter^> >> AndroidManifest.xml
+	@echo                 ^<action android:name="android.intent.action.MAIN" /^> >> AndroidManifest.xml
+	@echo                 ^<category android:name="android.intent.category.LAUNCHER" /^> >> AndroidManifest.xml
+	@echo             ^</intent-filter^> >> AndroidManifest.xml
+	@echo         ^</activity^> >> AndroidManifest.xml
+	@echo     ^</application^> >> AndroidManifest.xml
+	@echo ^</manifest^> >> AndroidManifest.xml
+else
+	@echo "<?xml version=\"1.0\" encoding=\"utf-8\"?>" > AndroidManifest.xml
+	@echo "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"" >> AndroidManifest.xml
+	@echo "          package=\"$(ANDROID_APP_ID)\"" >> AndroidManifest.xml
+	@echo "          android:versionCode=\"1\"" >> AndroidManifest.xml
+	@echo "          android:versionName=\"1.0\">" >> AndroidManifest.xml
+	@echo "    <!-- to ensure support for OpenGL ES 3.1 use API to 21+ -->" >> AndroidManifest.xml
+	@echo "    <uses-sdk android:minSdkVersion=\"$(API)\"/>" >> AndroidManifest.xml
+	@echo "    <uses-feature android:glEsVersion=\"0x00030000\" android:required=\"true\" />" >> AndroidManifest.xml
+	@echo "    <application android:label=\"native_example\"" >> AndroidManifest.xml
+	@echo "                 android:hasCode=\"false\"" >> AndroidManifest.xml
+	@echo "                 android:debuggable=\"true\" >" >> AndroidManifest.xml
+	@echo "        <activity android:name=\"android.app.NativeActivity\"" >> AndroidManifest.xml
+	@echo "                  android:exported=\"true\">" >> AndroidManifest.xml
+	@echo "            <!-- Tell NativeActivity the name of or .so -->" >> AndroidManifest.xml
+	@echo "            <meta-data android:name=\"android.app.lib_name\"" >> AndroidManifest.xml
+	@echo "                       android:value=\"native_example\" />" >> AndroidManifest.xml
+	@echo "            <intent-filter>" >> AndroidManifest.xml
+	@echo "                <action android:name=\"android.intent.action.MAIN\" />" >> AndroidManifest.xml
+	@echo "                <category android:name=\"android.intent.category.LAUNCHER\" />" >> AndroidManifest.xml
+	@echo "            </intent-filter>" >> AndroidManifest.xml
+	@echo "        </activity>" >> AndroidManifest.xml
+	@echo "    </application>" >> AndroidManifest.xml
+	@echo "</manifest>" >> AndroidManifest.xml
+endif
+	@cp -f AndroidManifest.xml out/ 2> $(NULLDEV)
+	@rm -f AndroidManifest.xml 		2> $(NULLDEV)

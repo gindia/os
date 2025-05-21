@@ -1,0 +1,22 @@
+Perquisites:
+    - gnu-make
+    - gnu-tools
+    - clang (used in bindgen)
+    - zig (toolchain for cross compiling)
+    - odin
+    - 7z (7-Zip)
+    - fd (find replacement)
+    - java 17 (+env JAVA_HOME) [NOTE: this is the one used by android ATM 22/05/2025]
+    - android NDK (+env ANDROID_NDK_HOME)
+    - android SDK (+env ANDROID_SDK_HOME):
+        * build-tools
+        * cmdline-tools
+        * emulator
+        * platform-tools
+        * platforms/android-$API
+
+Layout:
+    - os:   platform package.
+    - game: game/engine package.
+    - msic: utils.
+

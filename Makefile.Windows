@@ -1,0 +1,56 @@
+# vim : set noexpandtab shiftwidth=8 softtabstop=8 tabstop=8 :
+ifeq ($(OS),Windows_NT)
+	MKDIR = @if not exist "$(1)" mkdir "$(1)"
+	NULLDEV = NUL
+else
+	MKDIR = @mkdir -p "$(1)"
+	NULLDEV = /dev/null
+endif
+
+# *********************************************************************
+# Config
+# ***
+PREFIX ?= game
+C_FILE = $(realpath ./os/os.c)
+ODIN_PKG = $(realpath ./game)
+
+# *********************************************************************
+# Build
+# ***
+CLIBS =-lkernel32 -luser32 -lgdi32 -lopengl32 -lc
+
+.PHONY: out/windows/os-windows-x86_64.obj odin-windows-x86_64_obj remedy_debug
+
+all: build run
+
+build: create_out_dir out/windows/os-windows-x86_64.obj odin-windows-x86_64_obj $(PREFIX)-windows-x86_64.exe
+
+run: build
+
+create_out_dir:
+	@$(call MKDIR,out)
+	@$(call MKDIR,out/windows)
+	@-cd out/windows && rm * -fr 2> $(NULLDEV)
+
+out/windows/os-windows-x86_64.obj:
+	@echo --------------------------------
+	@zig cc -c $(C_FILE) -o $@ --target=x86_64-windows -DOS_WINDOWS -g -O1
+
+odin-windows-x86_64_obj:
+	@echo --------------------------------
+	@cd out/windows && odin build $(ODIN_PKG) --debug -o:minimal -target:windows_amd64 \
+		-build-mode:obj -reloc-mode:pic -no-entry-point -no-crt \
+		-vet-cast -vet-semicolon -vet-shadowing -vet-style
+
+$(PREFIX)-windows-x86_64.exe:
+	@echo --------------------------------
+	@zig cc -o out/windows/$@ -O0 -g --target=x86_64-windows -DOS_WINDOWS $(CLIBS) $(realpath $(shell ls out/windows/*.obj))
+	@-cd out/windows && rm *.obj -fr 2> $(NULLDEV)
+	@-cd out/windows && rm *.lib -fr 2> $(NULLDEV)
+	@echo ===========================================
+	@echo executable is ready at out/windows/$@
+	@echo ===========================================
+
+debug: remedy_debug
+remedy_debug:
+	@$(realpath msic/remedybg/remedybg.exe) -q -g $(realpath out/windows/$(PREFIX)-windows-x86_64.exe)
