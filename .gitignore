@@ -1,0 +1,16 @@
+*
+!.gitignore
+
+!README
+
+!Makefile
+!Makefile.Android
+!Makefile.Windows
+
+!os/
+!os/**
+!game/
+!game/**
+!msic/bindgen
+!msic/bindgen.exe
+!msic/debug.keystore
