@@ -15,7 +15,7 @@ endif
 
 NAME           ?= native_example
 API            ?= 31
-ANDROID_APP_ID ?=com.demo.native_example
+ANDROID_APP_ID ?=com.demo.$(NAME)
 
 # *********************************************************************
 
@@ -157,14 +157,14 @@ ifeq ($(OS),Windows_NT)
 	@echo     ^<!-- to ensure support for OpenGL ES 3.1 use API to 21+ --^> >> AndroidManifest.xml
 	@echo     ^<uses-sdk android:minSdkVersion="$(API)"/^> >> AndroidManifest.xml
 	@echo     ^<uses-feature android:glEsVersion="0x00030000" android:required="true" /^> >> AndroidManifest.xml
-	@echo     ^<application android:label="native_example" >> AndroidManifest.xml
+	@echo     ^<application android:label="$(NAME)" >> AndroidManifest.xml
 	@echo                   android:hasCode="false" >> AndroidManifest.xml
 	@echo                   android:debuggable="true"^> >> AndroidManifest.xml
 	@echo         ^<activity android:name="android.app.NativeActivity" >> AndroidManifest.xml
 	@echo                    android:exported="true"^> >> AndroidManifest.xml
 	@echo             ^<!-- Tell NativeActivity the name of or .so --^> >> AndroidManifest.xml
 	@echo             ^<meta-data android:name="android.app.lib_name" >> AndroidManifest.xml
-	@echo                        android:value="native_example" /^> >> AndroidManifest.xml
+	@echo                        android:value="$(NAME)" /^> >> AndroidManifest.xml
 	@echo             ^<intent-filter^> >> AndroidManifest.xml
 	@echo                 ^<action android:name="android.intent.action.MAIN" /^> >> AndroidManifest.xml
 	@echo                 ^<category android:name="android.intent.category.LAUNCHER" /^> >> AndroidManifest.xml
@@ -181,14 +181,14 @@ else
 	@echo "    <!-- to ensure support for OpenGL ES 3.1 use API to 21+ -->" >> AndroidManifest.xml
 	@echo "    <uses-sdk android:minSdkVersion=\"$(API)\"/>" >> AndroidManifest.xml
 	@echo "    <uses-feature android:glEsVersion=\"0x00030000\" android:required=\"true\" />" >> AndroidManifest.xml
-	@echo "    <application android:label=\"native_example\"" >> AndroidManifest.xml
+	@echo "    <application android:label=\"$(NAME)\"" >> AndroidManifest.xml
 	@echo "                 android:hasCode=\"false\"" >> AndroidManifest.xml
 	@echo "                 android:debuggable=\"true\" >" >> AndroidManifest.xml
 	@echo "        <activity android:name=\"android.app.NativeActivity\"" >> AndroidManifest.xml
 	@echo "                  android:exported=\"true\">" >> AndroidManifest.xml
 	@echo "            <!-- Tell NativeActivity the name of or .so -->" >> AndroidManifest.xml
 	@echo "            <meta-data android:name=\"android.app.lib_name\"" >> AndroidManifest.xml
-	@echo "                       android:value=\"native_example\" />" >> AndroidManifest.xml
+	@echo "                       android:value=\"$(NAME)\" />" >> AndroidManifest.xml
 	@echo "            <intent-filter>" >> AndroidManifest.xml
 	@echo "                <action android:name=\"android.intent.action.MAIN\" />" >> AndroidManifest.xml
 	@echo "                <category android:name=\"android.intent.category.LAUNCHER\" />" >> AndroidManifest.xml
